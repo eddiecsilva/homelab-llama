@@ -1,0 +1,118 @@
+# ============================================================
+# SearXNG - configuração de exemplo
+# ============================================================
+# Copie para config/searxng/settings.yml antes de subir o serviço:
+#
+#   cp config/searxng/settings.example.yml config/searxng/settings.yml
+#   sed -i "s|^  secret_key: .*|  secret_key: $(openssl rand -hex 32)|" config/searxng/settings.yml
+#   docker compose up -d searxng
+#
+# O settings.yml NÃO é versionado (contém o secret_key).
+# Sem ele, o container gera um settings.yml padrão com secret aleatório.
+# ============================================================
+
+use_default_settings:
+  engines:
+    keep_only:
+      - google
+      - google images
+      - google videos
+      - google news
+      - google files
+      - duckduckgo
+      - duckduckgo images
+      - duckduckgo videos
+      - duckduckgo news
+      - duckduckgo files
+      - duckduckgo ai
+      - bing
+      - bing images
+      - bing videos
+      - bing news
+      - bing files
+      - yahoo
+      - qwant
+      - ecosia
+      - mojeek
+      - swisscows
+      - bravesearch
+
+general:
+  debug: false
+  instance_name: "SearXNG Local"
+  max_requests_per_minute: 60
+
+server:
+  # Troque por um valor aleatório (openssl rand -hex 32)
+  secret_key: "ultrasecretkey"
+  image_proxy: true
+  limiter: false
+  public_instance: false
+  http_protocol_version: "1.0"
+  method: "POST"
+  default_http_headers:
+    X-Content-Type-Options: nosniff
+    X-Download-Options: noopen
+    X-Robots-Tag: noindex, nofollow
+    Referrer-Policy: no-referrer
+
+search:
+  safe_search: 0
+  autocomplete_min: 4
+  default_lang: ""
+  favicon_resolver: ""
+  formats:
+    - html
+    - json
+  ban_time_on_fail: 5
+  max_ban_time_in_seconds: 120
+  suspended_times:
+    SearxEngineAccessDenied: 180
+    SearxEngineCaptcha: 3600
+    SearxEngineTooManyRequests: 180
+    SearxEngineCloudflareCaptcha: 1296000
+    SearxEngineCloudflareAccessDenied: 86400
+    SearxEngineRecaptcha: 86400
+
+ui:
+  default_locale: ""
+  query_in_title: false
+  center_alignment: false
+  cache_url: https://web.archive.org/web/
+  default_theme: simple
+  theme_args:
+    simple_style: auto
+  search_on_category_select: true
+  hotkeys: default
+  url_formatting: pretty
+  static_use_hash: true
+
+plugins:
+  searx.plugins.calculator.SXNGPlugin:
+    active: true
+  searx.plugins.infinite_scroll.SXNGPlugin:
+    active: false
+  searx.plugins.hash_plugin.SXNGPlugin:
+    active: true
+  searx.plugins.self_info.SXNGPlugin:
+    active: true
+  searx.plugins.tracker_url_remover.SXNGPlugin:
+    active: true
+  searx.plugins.unit_converter.SXNGPlugin:
+    active: true
+  searx.plugins.ahmia_filter.SXNGPlugin:
+    active: true
+  searx.plugins.hostnames.SXNGPlugin:
+    active: true
+  searx.plugins.oa_doi_rewrite.SXNGPlugin:
+    active: false
+  searx.plugins.tor_check.SXNGPlugin:
+    active: false
+
+categories_as_tabs:
+  general:
+  images:
+  videos:
+  news:
+  science:
+  files:
