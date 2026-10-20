@@ -1,0 +1,39 @@
+# Secrets e credenciais
+.env
+!.env.example
+
+# Dados persistentes (não versionar)
+data/
+
+# Cache e modelos (muito grandes)
+models/
+cache/
+
+# Logs
+logs/
+*.log
+*.out
+
+# Config local do SearXNG (contém o secret_key)
+config/searxng/settings.yml
+
+# IDEs e editores
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Sistema
+.DS_Store
+Thumbs.db
+
+# Docker
+docker-compose.override.yml
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.coverage
