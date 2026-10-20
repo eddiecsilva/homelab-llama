@@ -1,5 +1,7 @@
 # Homelab Llama
 
+Versão atual: **1.0.0** (tag [`v1.0.0`](https://github.com/eddiecsilva/homelab-llama/releases/tag/v1.0.0))
+
 > [!WARNING]
 > **Aviso:** este lab foi planejado e testado apenas em ambientes isolados na rede local. Não é indicado para uso em ambientes de produção real.
 
@@ -17,6 +19,7 @@ Homelab Llama reúne 8 serviços de IA em containers Docker que rodam na sua má
 - [Acesso e autenticação](#acesso-e-autenticacao)
 - [Troubleshooting](#troubleshooting)
 - [Links externos](#links-externos)
+- [Changelog](#changelog)
 - [Licença](#licenca)
 
 ---
@@ -280,7 +283,7 @@ Documentação de cada serviço:
 - Vane - [discussions no GitHub](https://github.com/ItzCrazyKns/Vane/discussions)
 - SearXNG - [docs.searxng.org](https://docs.searxng.org)
 - FreshRSS - [freshrss.github.io](https://freshrss.github.io)
-- WhisperX - [whisperX-asr-service no Hugging Face](https://huggingface.co/m-bain/whisperX-asr-service)
+- WhisperX - [whisperx-asr-service no GitHub](https://github.com/murtaza-nasir/whisperx-asr-service)
 - llama.cpp - [ggml-org.github.io](https://ggml-org.github.io)
 
 ### Ferramentas de apoio
@@ -295,6 +298,18 @@ Documentação de cada serviço:
 
 - **[Homelab de IA n8n Ollama Qdrant - Diolinux](https://plus.diolinux.com.br/t/construindo-um-homelab-de-ia-n8n-ollama-e-qdrant-para-testes-e-aprendizado/81764)** - Uma das primeiras versões deste tipo de homelab, com configurações detalhadas.
 - **[Debian 13 Post-Installation Repository](https://github.com/eddiecsilva/debian-post-install)** - Guia de configuração pós-instalação para Debian 13, incluindo otimizações para desenvolvimento e IA.
+
+---
+
+<a id="changelog"></a>
+
+## 📋 Changelog
+
+Histórico de versões em [CHANGELOG.md](CHANGELOG.md).
+
+| Versão | Data | Resumo |
+|---------|------|--------|
+| 1.0.0 | 2026-10-20 | Primeira release estável: 8 serviços, hardware de referência, modelos e limitações conhecidas |
 
 ---
 
