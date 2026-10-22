@@ -2,8 +2,9 @@ name: validate
 
 # Checks do proprio repositorio: o compose tem que ser valido, o .env.example
 # tem que cobrir todas as variaveis e nenhum segredo pode estar preenchido.
-# Nao ha GPU nem Docker com GPU nos runners hospedados do GitHub, por isso o
-# smoke test do WhisperX roda a parte, sob demanda, no runner self-hosted.
+# O smoke test funcional do WhisperX fica fora do CI de proposito: ele precisa
+# de GPU, baixa o modelo e sobe o container. Ele roda na maquina do homelab,
+# contra o stack real.
 
 on:
   push:
@@ -39,39 +40,3 @@ jobs:
             exit 1
           fi
           echo "ok: nenhuma variavel invalida"
-
-  smoke-whisperx:
-    name: smoke test do WhisperX
-    # Precisa de GPU: roda no runner self-hosted da maquina do homelab.
-    # Dispara com: gh workflow run validate
-    if: github.event_name == 'workflow_dispatch'
-    runs-on: [self-hosted, linux]
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Subir o WhisperX
-        run: |
-          cp .env.example .env
-          docker compose up -d whisperx
-          for i in $(seq 1 60); do
-            if curl -fsS http://localhost:9000/health >/dev/null 2>&1; then
-              echo "whisperx pronto"
-              exit 0
-            fi
-            sleep 5
-          done
-          docker compose logs whisperx
-          exit 1
-
-      - name: Transcrever um audio curto
-        run: |
-          ffmpeg -f lavfi -i sine=frequency=440:duration=3 -ar 16000 -ac 1 /tmp/tone.wav
-          code=$(curl -s -o /tmp/out.json -w '%{http_code}' \
-            -F "audio_file=@/tmp/tone.wav" \
-            "http://localhost:9000/asr?model=large-v3&language=en&output_format=json")
-          echo "HTTP $code"
-          test "$code" = "200" || { cat /tmp/out.json; exit 1; }
-
-      - name: Derrubar o WhisperX
-        if: always()
-        run: docker compose down
