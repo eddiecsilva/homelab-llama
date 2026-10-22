@@ -1,3 +1,5 @@
+![Homelab Llama](screenshots/header-homelab-llama.png)
+
 # Homelab Llama
 
 Versão atual: **1.2.0** (tag [`v1.2.0`](https://github.com/eddiecsilva/homelab-llama/releases/tag/v1.2.0))
