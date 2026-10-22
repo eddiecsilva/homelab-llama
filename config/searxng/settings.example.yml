@@ -43,7 +43,9 @@ general:
   max_requests_per_minute: 60
 
 server:
-  # Troque por um valor aleatório (openssl rand -hex 32)
+  # Troque por um valor aleatorio (openssl rand -hex 32).
+  # O container le SEARXNG_SECRET do .env e sobrepoe este valor,
+  # entao o passo do sed e opcional.
   secret_key: "ultrasecretkey"
   image_proxy: true
   limiter: false
@@ -59,7 +61,7 @@ server:
 search:
   safe_search: 0
   autocomplete_min: 4
-  default_lang: ""
+  default_lang: "pt-BR"
   favicon_resolver: ""
   formats:
     - html
@@ -73,6 +75,13 @@ search:
     SearxEngineCloudflareCaptcha: 1296000
     SearxEngineCloudflareAccessDenied: 86400
     SearxEngineRecaptcha: 86400
+
+outgoing:
+  # 3 s (padrao) e curto demais para google/bing
+  request_timeout: 10.0
+  max_request_timeout: 20.0
+  pool_connections: 100
+  pool_maxsize: 20
 
 ui:
   default_locale: ""

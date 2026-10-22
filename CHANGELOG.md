@@ -4,6 +4,69 @@ Todas as mudanças relevantes deste projeto.
 
 Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e versionamento semântico.
 
+## [1.1.0] - 2026-10-22
+
+Corrige o consumo de VRAM do WhisperX, o provider quebrado do AnythingLLM e o
+contrato de variaveis de ambiente dos dois servicos. Fecha as issues #1 a #5.
+
+### WhisperX
+
+- O `compose.yaml` passou as 24 variaveis `WHISPERX_*`, que a imagem 0.4.3 nao le. Agora repassa os nomes reais (`DEVICE`, `COMPUTE_TYPE`, `BATCH_SIZE`, `ALIGN_DEVICE`, `CACHE_DIR`, `DEFAULT_MODEL`, `MAX_LOADED_MODELS`, `MAX_FILE_SIZE_MB`, `MODEL_KEEP_ALIVE_SECONDS`, `MODEL_EVICTION_INTERVAL_SECONDS`, `HF_TOKEN`, `LOG_LEVEL`) (issue #1, #4).
+- `HF_TOKEN` chega ao container: a diarizacao de falantes (pyannote `community-1`) funciona (issue #2).
+- `CACHE_DIR=/app/models`: o modelo de ~3 GB fica no volume e nao e re-baixado a cada recriacao do container (issue #3).
+- `BATCH_SIZE` de 16 para 2: 16 janelas de 30 s em paralelo estouravam a VRAM. `ALIGN_DEVICE=cpu` poupa ~1,9 GB de pico (4,2 GB em vez de 7,4 GB).
+- `mem_limit` de 8g e healthcheck no servico.
+
+### AnythingLLM
+
+- `GENERIC_OPEN_AI_MAX_TOKENS=4096`: o padrao da imagem (1024) cortava as respostas.
+- O provider `generic-openai` passa a receber `GENERIC_OPEN_AI_BASE_PATH`, `GENERIC_OPEN_AI_MODEL_PREF`, `GENERIC_OPEN_AI_API_KEY` e as chaves de embedding com os nomes que a imagem le.
+
+### Open WebUI
+
+- STT (transcricao) apontado para o WhisperX: `AUDIO_STT_ENGINE=openai` e `AUDIO_STT_OPENAI_API_BASE_URL=http://whisperx:9000/v1`. Antes o padrao caia no llama.cpp, que nao tem endpoint de audio.
+- `WHISPER_COMPUTE_TYPE=int8`: o container nao tem GPU.
+- `CORS_ALLOW_ORIGINS` agora e repassado.
+
+### llama.cpp
+
+- Contexto de 65536 para 16384 (10,3 GB de VRAM em vez de 12,2 GB) para o chat e a transcricao coexistirem na mesma GPU.
+- `--sleep-idle-seconds 300`: o servidor libera a VRAM depois de 5 minutos ocioso. A opcao nao tem variavel de ambiente, entao vai na linha de comando do Compose.
+- `LLAMA_UBATCH_SIZE=1024` e limiares de compactacao do Open WebUI ajustados (12000/13000) para acompanhar o novo contexto.
+- `--fit` segue desligado, agora com o motivo documentado: com contexto e camadas de GPU fixos, o ajuste aborta a inicializacao do servidor.
+
+### SearXNG
+
+- `search.default_lang: "pt-BR"` e `outgoing.request_timeout: 10.0` (3 s e curto para google/bing).
+- `SEARXNG_LANGUAGE` removido do Compose: nao e uma variavel do SearXNG.
+
+### FreshRSS
+
+- `CRON_MIN` vem do `.env` (`FRESHRSS_CRON_MIN=30`); antes o cron estava desligado com `0`.
+
+### Infraestrutura
+
+- Healthcheck em todos os 8 servicos, com `depends_on: service_healthy` nas interfaces.
+- Rotacao de log por servico (10 MB x 3 arquivos).
+- Varredura de variaveis: `SEARXNG_LANGUAGE`, `GENERIC_OPENAI_*` e o bloco TTS do WhisperX (nao lidos pelas imagens) sairam do `.env` e do `compose.yaml`.
+
+### Documentacao
+
+- Secao do WhisperX no README: contrato de variaveis, exemplos de chamada, orcamento de VRAM medido e troubleshooting de `CUDA out of memory` e `cudaErrorInvalidDevice`.
+
+### Limitacoes conhecidas nesta release
+
+- O chat e a transcricao dividem a mesma GPU. Com `large-v3` e um modelo de 12B, 16 GB de VRAM e o piso: use `WHISPERX_MODEL=large-v3-turbo` ou `LLAMA_SLEEP_IDLE_SECONDS` para conviverem.
+- O `WHISPERX_LOGLEVEL=INFO` e o padrao agora (antes `ERROR`), para o log mostrar o carregamento do modelo.
+
+### Issues fechadas nesta release
+
+- #1 remover as 24 variaveis de ambiente nao lidas pela imagem do WhisperX
+- #2 passar `HF_TOKEN` ao container do WhisperX
+- #3 corrigir o volume de cache do WhisperX para `/.cache`
+- #4 explicitar `DEVICE`/`COMPUTE_TYPE`/`BATCH_SIZE` e revisar preload contra eviction
+- #5 documentar o contrato de variaveis e o setup do WhisperX no README
+
 ## [1.0.0] - 2026-10-20
 
 Primeira release estavel do stack. Marca o ambiente completo, com os 8 servicos documentados, rodando local.

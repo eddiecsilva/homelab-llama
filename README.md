@@ -1,6 +1,6 @@
 # Homelab Llama
 
-Versão atual: **1.0.0** (tag [`v1.0.0`](https://github.com/eddiecsilva/homelab-llama/releases/tag/v1.0.0))
+Versão atual: **1.1.0**
 
 > [!WARNING]
 > **Aviso:** este lab foi planejado e testado apenas em ambientes isolados na rede local. Não é indicado para uso em ambientes de produção real.
@@ -87,12 +87,16 @@ docker run --rm --gpus all nvidia/cuda:12.1.0-base-ubuntu22.04 nvidia-smi
    sed -i "s|^  secret_key: .*|  secret_key: $(openssl rand -hex 32)|" config/searxng/settings.yml
    ```
 
+   Opcional: o container lê `SEARXNG_SECRET` do `.env` e sobrepõe o `secret_key` do arquivo, então o `sed` é redundante se você já preencheu a variável.
+
 4. **Subir os serviços**
 
    ```bash
    docker compose up -d
    docker compose ps
    ```
+
+   Cada serviço tem `healthcheck` e o Compose espera os backends ficarem saudáveis antes de subir as interfaces.
 
 > [!WARNING]
 > O `.env` ainda tem campos em branco para você preencher: `CHAT_MODEL`, `MODELS_DIR` e `FRESHRSS_USERNAME`. Sem modelo em `$MODELS_DIR/chat` o chat não responde.
@@ -206,6 +210,50 @@ flowchart TD
 docker compose logs whisperx
 ```
 
+### Como o WhisperX é configurado
+
+A imagem `learnedmachine/whisperx-asr-service` **não lê variáveis com prefixo `WHISPERX_`**. Ela lê `DEVICE`, `COMPUTE_TYPE`, `BATCH_SIZE`, `ALIGN_DEVICE`, `CACHE_DIR`, `DEFAULT_MODEL`, `MAX_LOADED_MODELS`, `MAX_FILE_SIZE_MB`, `MODEL_KEEP_ALIVE_SECONDS`, `MODEL_EVICTION_INTERVAL_SECONDS`, `HF_TOKEN` e `LOG_LEVEL`. O `compose.yaml` faz essa tradução a partir das variáveis `WHISPERX_*` do `.env`, que existem só para o seu lado.
+
+Idioma e prompt são parâmetros de cada requisição, não do ambiente:
+
+```bash
+# API do WhisperX
+curl -s -F "audio_file=@audio.mp3" \
+  "http://localhost:9000/asr?model=large-v3&language=pt&output_format=json"
+
+# API compativel com OpenAI (mesma que o Open WebUI usa)
+curl -s -F "file=@audio.mp3" -F "model=large-v3" -F "language=pt" \
+  "http://localhost:9000/v1/audio/transcriptions"
+```
+
+No Open WebUI, o STT fica em Admin → Configurações → Áudio, com o motor `OpenAI` e a URL `http://whisperx:9000/v1`.
+
+| Variável | Efeito |
+|---|---|
+| `WHISPERX_BATCH_SIZE` | janelas de 30 s processadas em paralelo na GPU. Acima de 4 o `large-v3` estoura a VRAM |
+| `WHISPERX_ALIGN_DEVICE` | `cpu` (padrão) poupa ~1,9 GB de VRAM e deixa o alinhamento ~3x mais lento; `cuda` é mais rápido |
+| `WHISPERX_MODEL` | `large-v3` (4,2 GB de VRAM) ou `large-v3-turbo` (2,4 GB) |
+| `WHISPERX_CACHE_DIR` | cache do Hugging Face. No padrão (`/app/models`) o modelo de ~3 GB fica no volume e não é baixado de novo |
+| `WHISPERX_MODEL_KEEP_ALIVE_SECONDS` | descarrega o modelo da GPU após X segundos ocioso |
+| `HF_TOKEN` | habilita a diarização (falantes `SPEAKER_00`) via pyannote `community-1` |
+
+### Orçamento de VRAM
+
+Medido na RTX 5070 Ti (16 GB) com `gemma-4-12b-it-Q6_K`:
+
+| Componente | VRAM |
+|---|---:|
+| Desktop (Xorg, Wayland) | ~1,4 GB |
+| llama.cpp (12B Q6_K, contexto 16384, KV q8_0) | 10,3 GB |
+| llama.cpp (12B Q6_K, contexto 32768 / 65536) | 10,5 GB / 12,2 GB |
+| WhisperX `large-v3` (batch 2, alinhamento na CPU) | 4,2 GB |
+| WhisperX `large-v3` (batch 4, alinhamento na GPU) | 7,4 GB |
+| WhisperX `large-v3-turbo` (batch 2, alinhamento na CPU) | 2,4 GB |
+
+O chat e a transcrição dividem a mesma GPU. O router do llama.cpp só carrega o modelo sob demanda, então na maior parte do tempo a transcrição roda com a VRAM livre. Quando precisar transcrever com o modelo de chat carregado, use `WHISPERX_MODEL=large-v3-turbo` ou espere o servidor dormir (`LLAMA_SLEEP_IDLE_SECONDS=300` libera a VRAM após 5 minutos ocioso).
+
+Aplicativos de desktop com aceleração (Resolve, Premiere) consomem VRAM fora do Docker e quebram esse orçamento.
+
 ---
 
 <a id="hardware"></a>
@@ -214,7 +262,7 @@ docker compose logs whisperx
 
 Testado em: AMD Ryzen 5 5700X (8 núcleos/16 threads), 48GB RAM, NVIDIA RTX 5070 Ti 16GB (CUDA), SSD NVMe 200GB+, Debian 13.
 
-Mínimo para rodar a stack: 8 núcleos, 32GB RAM, GPU NVIDIA 8GB+ VRAM, 100GB livres.
+Mínimo para rodar a stack: 8 núcleos, 32GB RAM, GPU NVIDIA 8GB+ VRAM, 100GB livres. Com o WhisperX `large-v3` e um modelo de 12B, 16GB de VRAM é o piso real - abaixo disso o chat e a transcrição não coexistem (veja [orçamento de VRAM](#orçamento-de-vram)).
 
 ---
 
@@ -268,6 +316,27 @@ nvidia-smi && free -h            # GPU e memória
 Erros de memória: reduza `LLAMA_MODELS_MAX` e `LLAMA_CTX_SIZE` no `.env`.
 Erros de GPU: reinicie o Docker (`sudo systemctl restart docker`) e teste com `docker run --rm --gpus all nvidia/cuda:12.1.0-base-ubuntu22.04 nvidia-smi`.
 
+### Transcrição falha com `CUDA failed with error out of memory`
+
+A GPU está cheia. O WhisperX e o modelo de chat disputam os mesmos 16 GB.
+
+1. Feche aplicativos que usam a GPU fora do Docker (Resolve, Premiere, jogos).
+2. Reduza `WHISPERX_BATCH_SIZE` para 1 ou 2 e mantenha `WHISPERX_ALIGN_DEVICE=cpu`.
+3. Troque `WHISPERX_MODEL=large-v3-turbo` (2,4 GB em vez de 4,2 GB).
+4. Espere o modelo de chat dormir: `LLAMA_SLEEP_IDLE_SECONDS=300` libera a VRAM após 5 minutos ocioso.
+
+### Transcrição falha com `parallel_for failed: cudaErrorInvalidDevice`
+
+O modelo ficou envenenado na VRAM depois de um OOM e o serviço o reaproveita por até `WHISPERX_MODEL_KEEP_ALIVE_SECONDS` segundos. A reinicialização do container resolve:
+
+```bash
+docker compose restart whisperx
+```
+
+### Chat lento ou sem resposta
+
+O modelo não cabe na VRAM com o contexto configurado. Reduza `LLAMA_CTX_SIZE` (16384 usa 10,3 GB contra 12,2 GB de 65536) e ajuste `CONTEXT_COMPACTION_TOKEN_THRESHOLD` e `CONTEXT_COMPACTION_TOKEN_CAP` no `.env` junto com ele.
+
 Os dados ficam em `data/` (bind mount) e em `$MODELS_DIR/` - faça backup antes de mexer.
 
 ---
@@ -309,6 +378,7 @@ Histórico de versões em [CHANGELOG.md](CHANGELOG.md).
 
 | Versão | Data | Resumo |
 |---------|------|--------|
+| 1.1.0 | 2026-10-22 | Correções do WhisperX (VRAM, env, cache, HF_TOKEN), provider do AnythingLLM, STT do Open WebUI, VRAM do llama.cpp, healthchecks e rotação de log |
 | 1.0.0 | 2026-10-20 | Primeira release estável: 8 serviços, hardware de referência, modelos e limitações conhecidas |
 
 ---

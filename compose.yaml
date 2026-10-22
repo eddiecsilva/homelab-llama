@@ -5,6 +5,12 @@ x-service-defaults: &service-defaults
   restart: unless-stopped
   networks:
     - ai-stack
+  # Rotacao de log: tracebacks de VRAM e do llama.cpp crescem sem limite
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
 
 services:
   llama-gpu:
@@ -12,7 +18,13 @@ services:
     image: "${LLAMA_GPU_IMAGE}"
     entrypoint:
       - /app/llama-server
-    command: ["--image-min-tokens", "${LLAMA_IMAGE_MAX_TOKENS}"]
+    # --sleep-idle-seconds nao tem variavel de ambiente no llama.cpp:
+    # o servidor libera a VRAM depois de X segundos sem requisicoes.
+    command:
+      - "--image-min-tokens"
+      - "${LLAMA_IMAGE_MAX_TOKENS}"
+      - "--sleep-idle-seconds"
+      - "${LLAMA_SLEEP_IDLE_SECONDS}"
     ports:
       - "${BIND_ADDRESS}:${LLAMA_GPU_PORT}:8080"
     environment:
@@ -51,6 +63,12 @@ services:
     volumes:
       - "${MODELS_DIR}/chat:/models/chat"
       - ./data/llama-gpu/cache:/cache
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
     deploy:
       resources:
         reservations:
@@ -89,6 +107,12 @@ services:
       LLAMA_ARG_ENDPOINT_METRICS: "${EMBEDDING_METRICS}"
     volumes:
       - ./data/llama-embed/cache:/cache
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 120s
 
   searxng:
     <<: *service-defaults
@@ -106,6 +130,12 @@ services:
     volumes:
       - ./config/searxng:/etc/searxng
       - ./data/searxng/cache:/var/cache/searxng
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
 
   open-webui:
     <<: *service-defaults
@@ -115,13 +145,17 @@ services:
     ports:
       - "${BIND_ADDRESS}:${OPENWEBUI_PORT}:8080"
     depends_on:
-      - llama-gpu
-      - llama-embed
-      - searxng
+      llama-gpu:
+        condition: service_healthy
+      llama-embed:
+        condition: service_healthy
+      searxng:
+        condition: service_healthy
     environment:
       TZ: "${TZ}"
       WEBUI_URL: "http://${PUBLIC_HOST}:${OPENWEBUI_PORT}"
       WEBUI_SECRET_KEY: "${WEBUI_SECRET_KEY}"
+      CORS_ALLOW_ORIGINS: "${CORS_ALLOW_ORIGINS}"
       DEFAULT_LOCALE: "${OPENWEBUI_DEFAULT_LOCALE}"
       DEFAULT_MODELS: "${CHAT_MODEL}"
       DEFAULT_PINNED_MODELS: "${CHAT_MODEL}"
@@ -146,7 +180,6 @@ services:
       WEB_SEARCH_CONCURRENT_REQUESTS: "${OPENWEBUI_WEB_SEARCH_CONCURRENCY}"
       WEB_LOADER_CONCURRENT_REQUESTS: "${OPENWEBUI_WEB_LOADER_CONCURRENCY}"
       SEARXNG_QUERY_URL: "${SEARXNG_QUERY_URL}"
-      SEARXNG_LANGUAGE: "${SEARXNG_LANGUAGE}"
       USER_AGENT: "${OPENWEBUI_USER_AGENT}"
       ENABLE_MEMORY_SYSTEM_CONTEXT: "True"
       ENABLE_MEMORIES: "True"
@@ -159,9 +192,20 @@ services:
       WHISPER_MODEL: "${OPENWEBUI_WHISPER_MODEL}"
       WHISPER_LANGUAGE: "${OPENWEBUI_WHISPER_LANGUAGE}"
       WHISPER_MULTILINGUAL: "${OPENWEBUI_WHISPER_MULTILINGUAL}"
+      # O container do Open WebUI nao tem GPU: o motor local de STT precisa de int8
       WHISPER_COMPUTE_TYPE: "${OPENWEBUI_WHISPER_COMPUTE_TYPE}"
+      # STT via API compativel com OpenAI apontando para o servico WhisperX
+      AUDIO_STT_ENGINE: "${OPENWEBUI_AUDIO_STT_ENGINE}"
+      AUDIO_STT_OPENAI_API_BASE_URL: "${OPENWEBUI_AUDIO_STT_OPENAI_API_BASE_URL}"
+      AUDIO_STT_OPENAI_API_KEY: "${OPENWEBUI_AUDIO_STT_OPENAI_API_KEY}"
     volumes:
       - ./data/open-webui:/app/backend/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 120s
 
   anythingllm:
     <<: *service-defaults
@@ -171,9 +215,12 @@ services:
     ports:
       - "${BIND_ADDRESS}:${ANYTHINGLLM_PORT}:3001"
     depends_on:
-      - llama-gpu
-      - llama-embed
-      - searxng
+      llama-gpu:
+        condition: service_healthy
+      llama-embed:
+        condition: service_healthy
+      searxng:
+        condition: service_healthy
     cap_add:
       - SYS_ADMIN
     environment:
@@ -183,10 +230,12 @@ services:
       SIG_KEY: "${ANYTHINGLLM_SIG_KEY}"
       SIG_SALT: "${ANYTHINGLLM_SIG_SALT}"
       LLM_PROVIDER: "${ANYTHINGLLM_LLM_PROVIDER}"
+      # A imagem le GENERIC_OPEN_AI_* (com OPEN_AI separado).
       GENERIC_OPEN_AI_BASE_PATH: "${LLAMA_GPU_API_URL}"
       GENERIC_OPEN_AI_MODEL_PREF: "${CHAT_MODEL}"
       GENERIC_OPEN_AI_MODEL_TOKEN_LIMIT: "${LLAMA_CTX_SIZE}"
       GENERIC_OPEN_AI_API_KEY: "${OPENAI_COMPAT_API_KEY}"
+      GENERIC_OPEN_AI_MAX_TOKENS: "${ANYTHINGLLM_GENERIC_MAX_TOKENS}"
       EMBEDDING_ENGINE: "${ANYTHINGLLM_EMBEDDING_ENGINE}"
       EMBEDDING_BASE_PATH: "${LLAMA_EMBED_API_URL}"
       EMBEDDING_MODEL_PREF: "${EMBEDDING_MODEL}"
@@ -201,6 +250,12 @@ services:
       ANYTHINGLLM_CHROMIUM_ARGS: "${ANYTHINGLLM_CHROMIUM_ARGS}"
     volumes:
      - ./data/anythingllm:/app/server/storage
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:3001/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 120s
 
   whisperx:
     <<: *service-defaults
@@ -212,37 +267,35 @@ services:
       - "${BIND_ADDRESS}:${WHISPERX_PORT}:9000"
     environment:
       TZ: "${TZ}"
-      WORKERS: "${WHISPERX_WORKERS}"
-      AUDIO_DEVICE: "${WHISPERX_AUDIO_DEVICE}"
-      WHISPERX_MODEL: "${WHISPERX_MODEL}"
-      LANGUAGES: "${WHISPERX_LANGUAGES}"
-      WHISPERX_LANGUAGE: "${WHISPERX_LANGUAGE}"
-      WHISPERX_PROMPT: "${WHISPERX_PROMPT}"
-      WHISPERX_PROMPT_ON_ERROR: "${WHISPERX_PROMPT_ON_ERROR}"
-      WHISPERX_INITIAL_PROMPT: "${WHISPERX_INITIAL_PROMPT}"
-      WHISPERX_MAX_LINES: "${WHISPERX_MAX_LINES}"
-      WHISPERX_TTS_MODEL: "${WHISPERX_TTS_MODEL}"
-      WHISPERX_TTS_HF_REPO: "${WHISPERX_TTS_HF_REPO}"
-      WHISPERX_TTS_FAST: "${WHISPERX_TTS_FAST}"
-      WHISPERX_TTS_LANGUAGE: "${WHISPERX_TTS_LANGUAGE}"
-      WHISPERX_TTS_HF_TOKEN: "${WHISPERX_TTS_HF_TOKEN}"
-      WHISPERX_TTS_ENABLE: "${WHISPERX_TTS_ENABLE}"
-      WHISPERX_ENABLE_GPU: "${WHISPERX_ENABLE_GPU}"
-      WHISPERX_NUM_PROCESSORS: "${WHISPERX_NUM_PROCESSORS}"
-      WHISPERX_RUN_ON_GPU: "${WHISPERX_RUN_ON_GPU}"
-      WHISPERX_BATCH_SIZE: "${WHISPERX_BATCH_SIZE}"
-      WHISPERX_THREADS: "${WHISPERX_THREADS}"
-      WHISPERX_DEVICE: "${WHISPERX_DEVICE}"
-      WHISPERX_SEED: "${WHISPERX_SEED}"
-      WHISPERX_USE_WK: "${WHISPERX_USE_WK}"
-      WHISPERX_WK_THREADS: "${WHISPERX_WK_THREADS}"
-      WHISPERX_WK_TIMEOUT: "${WHISPERX_WK_TIMEOUT}"
-      NVIDIA_DRIVER_CAPABILITIES: "${NVIDIA_DRIVER_CAPABILITIES}"
+      # A imagem (app/pipeline.py) le estas variaveis SEM o prefixo WHISPERX_.
+      # Qualquer coisa com prefixo WHISPERX_ e ignorado silenciosamente.
+      DEVICE: "${WHISPERX_DEVICE}"
+      COMPUTE_TYPE: "${WHISPERX_COMPUTE_TYPE}"
+      # Janelas de 30 s em paralelo na GPU: acima de 4 o large-v3 estoura a VRAM
+      BATCH_SIZE: "${WHISPERX_BATCH_SIZE}"
+      # Alinhamento de timestamps na CPU poupa ~1,9 GB de VRAM
+      ALIGN_DEVICE: "${WHISPERX_ALIGN_DEVICE}"
+      # Cache do Hugging Face no volume persistente (evita rebaixar ~3 GB)
+      CACHE_DIR: "${WHISPERX_CACHE_DIR}"
+      DEFAULT_MODEL: "${WHISPERX_MODEL}"
+      MAX_LOADED_MODELS: "${WHISPERX_MAX_LOADED_MODELS}"
+      MAX_FILE_SIZE_MB: "${WHISPERX_MAX_FILE_SIZE_MB}"
       MODEL_KEEP_ALIVE_SECONDS: "${WHISPERX_MODEL_KEEP_ALIVE_SECONDS}"
       MODEL_EVICTION_INTERVAL_SECONDS: "${WHISPERX_MODEL_EVICTION_INTERVAL_SECONDS}"
+      # Necessario para a diarizacao (pyannote speaker-diarization-community-1)
+      HF_TOKEN: "${HF_TOKEN}"
+      NVIDIA_DRIVER_CAPABILITIES: "${NVIDIA_DRIVER_CAPABILITIES}"
+      LOG_LEVEL: "${WHISPERX_LOGLEVEL}"
     volumes:
       - "${MODELS_DIR}/whisperx:/app/models"
       - ./data/whisperx:/app/data
+    mem_limit: "${WHISPERX_MEM_LIMIT}"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
     deploy:
       resources:
         reservations:
@@ -260,9 +313,12 @@ services:
     ports:
       - "${BIND_ADDRESS}:${VANE_PORT}:3000"
     depends_on:
-      - llama-gpu
-      - llama-embed
-      - searxng
+      llama-gpu:
+        condition: service_healthy
+      llama-embed:
+        condition: service_healthy
+      searxng:
+        condition: service_healthy
     environment:
       TZ: "${TZ}"
       DATA_DIR: /home/vane
@@ -273,6 +329,13 @@ services:
       NEXT_TELEMETRY_DISABLED: "${VANE_DISABLE_TELEMETRY}"
     volumes:
        - ./data/vane:/home/vane/data
+    healthcheck:
+      # O Vane faz bind no IP do container (HOSTNAME), nao em 127.0.0.1
+      test: ["CMD", "node", "-e", "const h=require('os').hostname();fetch('http://'+h+':3000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
 
   freshrss:
     <<: *service-defaults
@@ -281,7 +344,7 @@ services:
       - "${BIND_ADDRESS}:${FRESHRSS_PORT}:80"
     environment:
       TZ: "${TZ}"
-      CRON_MIN: "0"
+      CRON_MIN: "${FRESHRSS_CRON_MIN}"
       FRESHRSS_INSTALL: |-
         --api-enabled
         --base-url ${FRESHRSS_BASE_URL}
@@ -294,6 +357,12 @@ services:
     volumes:
       - ./data/freshrss/data:/var/www/FreshRSS/data
       - ./data/freshrss/extensions:/var/www/FreshRSS/extensions
+    healthcheck:
+      test: ["CMD", "php", "-r", "exit(@file_get_contents('http://127.0.0.1/') ? 0 : 1);"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
 
 networks:
   ai-stack:
