@@ -28,8 +28,13 @@ jobs:
       - name: Validar o compose
         run: docker compose config --quiet
 
-      - name: Conferir o contrato compose x .env.example
-        run: python3 scripts/check-env-contract.py
+      - name: Conferir o contrato compose x os dois templates
+        run: |
+          python3 scripts/check-env-contract.py .env.example
+          python3 scripts/check-env-contract.py .env.example.small
+
+      - name: Compilar os scripts
+        run: python3 -m py_compile scripts/check-env-contract.py scripts/check-hardware.py
 
       - name: Conferir que o compose nao usa variavel com prefixo invalido
         run: |

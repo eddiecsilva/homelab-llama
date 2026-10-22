@@ -4,6 +4,26 @@ Todas as mudanças relevantes deste projeto.
 
 Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e versionamento semântico.
 
+## [1.2.0] - 2026-10-22
+
+Segundo perfil de hardware, para maquinas com 8 GB de VRAM e 16 GB de RAM.
+
+### Perfis de hardware
+
+- `.env.example.small`: template do perfil pequeno (8 GB de VRAM, 16 GB de RAM). Modelo de chat de 8B em Q4_K_M ou menor, contexto 8192, WhisperX `medium` (~2,6 GB de VRAM em vez de 4,2 GB) e limites de RAM apertados.
+- `.env.example` continua sendo o perfil padrao (16 GB de VRAM, 32 GB+ de RAM).
+- `scripts/check-hardware.py`: preflight que le o `.env`, mede a VRAM e a RAM da maquina, abre o GGUF do `CHAT_MODEL` e diz se o perfil cabe. Aceita `--vram 8 --ram 16` para simular outra maquina.
+- README: tabela dos dois perfis, tabela de GGUF por quantizacao (Q6_K, Q5_K_M, Q4_K_M, Q3_K_M) com a VRAM resultante e a regra de escolha. Corrige o "8GB+ VRAM" do texto anterior, que era falso para o modelo de 12B.
+
+### Memoria
+
+- `mem_limit` por servico, driven pelo `.env`: `LLAMA_GPU_MEM_LIMIT`, `LLAMA_EMBED_MEM_LIMIT`, `OPENWEBUI_MEM_LIMIT`, `ANYTHINGLLM_MEM_LIMIT` e `WHISPERX_MEM_LIMIT`.
+
+### CI
+
+- O workflow passa a validar os dois templates de ambiente, nao so o principal.
+- `scripts/check-env-contract.py` aceita o arquivo de ambiente como argumento.
+
 ## [1.1.0] - 2026-10-22
 
 Corrige o consumo de VRAM do WhisperX, o provider quebrado do AnythingLLM e o

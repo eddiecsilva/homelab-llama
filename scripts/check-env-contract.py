@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Confere o contrato entre o compose.yaml e o .env.example.
+"""Confere o contrato entre o compose.yaml e um template de ambiente.
 
 A imagem do WhisperX ignorava silenciosamente 24 variaveis com prefixo
 WHISPERX_ (e o AnythingLLM ignorava GENERIC_OPENAI_*). Nada quebrava no
 compose: a variavel simply nao chegava no container. Este script existe para
 que o mesmo tipo de erro nao volte a passar.
 
+Uso: check-env-contract.py [arquivo-de-env]   (padrao: .env.example)
 Saida: 0 se tudo bate, 1 se houver problema.
 """
 
@@ -15,9 +16,8 @@ from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parent.parent
 COMPOSE = RAIZ / "compose.yaml"
-ENV_EXAMPLE = RAIZ / ".env.example"
 
-# Variaveis que o Compose le e que nao precisam existir no .env.example.
+# Variaveis que o Compose le e que nao precisam existir no template.
 IGNORAR = {
     "COMPOSE_PROJECT_NAME",
     "MODELS_DIR",
@@ -25,7 +25,7 @@ IGNORAR = {
     "HOSTNAME",
 }
 
-# Segredos: o .env.example so pode ter placeholder vazio.
+# Segredos: o template so pode ter placeholder vazio.
 SEGREDOS = re.compile(
     r"(SECRET|KEY|SALT|PASSWORD|TOKEN)$",
     re.IGNORECASE,
@@ -39,46 +39,49 @@ def variaveis_do_compose() -> set:
     return set(re.findall(r"\$\{([A-Za-z_][A-Za-z0-9_]*)", texto))
 
 
-def variaveis_do_env() -> set:
-    chaves = set()
-    for linha in ENV_EXAMPLE.read_text(encoding="utf-8").splitlines():
+def pares_do_env(caminho: Path) -> list:
+    pares = []
+    for linha in caminho.read_text(encoding="utf-8").splitlines():
         linha = linha.strip()
         if not linha or linha.startswith("#") or "=" not in linha:
             continue
-        chaves.add(linha.split("=", 1)[0].strip())
-    return chaves
+        chave, _, valor = linha.partition("=")
+        pares.append((chave.strip(), valor.strip()))
+    return pares
 
 
 def main() -> int:
+    caminho = Path(sys.argv[1]) if len(sys.argv) > 1 else RAIZ / ".env.example"
+    if not caminho.is_absolute():
+        caminho = RAIZ / caminho
+    if not caminho.exists():
+        print(f"ERRO: {caminho} nao existe")
+        return 1
+
     compose = variaveis_do_compose()
-    env = variaveis_do_env()
+    pares = pares_do_env(caminho)
+    env = {chave for chave, _ in pares}
     erros = 0
 
     faltando = sorted(v for v in compose - env if v not in IGNORAR)
     if faltando:
         erros += 1
-        print("ERRO: variaveis usadas no compose.yaml e ausentes no .env.example:")
+        print(f"ERRO [{caminho.name}]: variaveis usadas no compose.yaml e ausentes no template:")
         for nome in faltando:
             print(f"  - {nome}")
 
-    print(f"ok: {len(compose)} variaveis no compose, {len(env)} no .env.example")
+    print(f"ok [{caminho.name}]: {len(compose)} variaveis no compose, {len(env)} no template")
 
-    # Segredos com valor real no .env.example
-    for linha in ENV_EXAMPLE.read_text(encoding="utf-8").splitlines():
-        linha = linha.strip()
-        if not linha or linha.startswith("#") or "=" not in linha:
-            continue
-        chave, _, valor = linha.partition("=")
-        chave = chave.strip()
+    for chave, valor in pares:
         valor = valor.strip().strip('"').strip("'")
         if SEGREDOS.search(chave) and VALOR_SUSPEITO.match(valor):
             erros += 1
-            print(f"ERRO: {chave} tem um valor de segredo preenchido no .env.example")
+            print(f"ERRO [{caminho.name}]: {chave} tem um valor de segredo preenchido")
 
     if erros:
-        print(f"FALHOU: {erros} problema(s)")
+        print(f"FALHOU [{caminho.name}]: {erros} problema(s)")
         return 1
-    print("OK: contrato do compose e do .env.example conferido")
+    print(f"OK [{caminho.name}]: contrato do compose e do template conferido")
     return 0
 
 

@@ -63,6 +63,7 @@ services:
     volumes:
       - "${MODELS_DIR}/chat:/models/chat"
       - ./data/llama-gpu/cache:/cache
+    mem_limit: "${LLAMA_GPU_MEM_LIMIT}"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
       interval: 30s
@@ -107,6 +108,7 @@ services:
       LLAMA_ARG_ENDPOINT_METRICS: "${EMBEDDING_METRICS}"
     volumes:
       - ./data/llama-embed/cache:/cache
+    mem_limit: "${LLAMA_EMBED_MEM_LIMIT}"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
       interval: 30s
@@ -200,6 +202,7 @@ services:
       AUDIO_STT_OPENAI_API_KEY: "${OPENWEBUI_AUDIO_STT_OPENAI_API_KEY}"
     volumes:
       - ./data/open-webui:/app/backend/data
+    mem_limit: "${OPENWEBUI_MEM_LIMIT}"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
       interval: 30s
@@ -250,6 +253,7 @@ services:
       ANYTHINGLLM_CHROMIUM_ARGS: "${ANYTHINGLLM_CHROMIUM_ARGS}"
     volumes:
      - ./data/anythingllm:/app/server/storage
+    mem_limit: "${ANYTHINGLLM_MEM_LIMIT}"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:3001/api/health"]
       interval: 30s

@@ -21,7 +21,6 @@ Homelab Llama reúne 8 serviços de IA em containers Docker que rodam na sua má
 - [Links externos](#links-externos)
 - [Changelog](#changelog)
 - [Licença](#licenca)
-
 ---
 
 <a id="visao-geral"></a>
@@ -67,9 +66,13 @@ docker run --rm --gpus all nvidia/cuda:12.1.0-base-ubuntu22.04 nvidia-smi
 
 1. **Copiar o template de configuração**
 
+   Escolha o template que cabe na sua máquina (veja [perfis de hardware](#perfis-de-hardware)):
+
    ```bash
    cd homelab-llama
-   cp .env.example .env
+   cp .env.example .env          # perfil padrão: 16 GB de VRAM, 32 GB+ de RAM
+   # ou, para 8 GB de VRAM e 16 GB de RAM:
+   # cp .env.example.small .env
    ```
 
 2. **Gerar os secrets criptográficos**
@@ -232,7 +235,7 @@ No Open WebUI, o STT fica em Admin → Configurações → Áudio, com o motor `
 |---|---|
 | `WHISPERX_BATCH_SIZE` | janelas de 30 s processadas em paralelo na GPU. Acima de 4 o `large-v3` estoura a VRAM |
 | `WHISPERX_ALIGN_DEVICE` | `cpu` (padrão) poupa ~1,9 GB de VRAM e deixa o alinhamento ~3x mais lento; `cuda` é mais rápido |
-| `WHISPERX_MODEL` | `large-v3` (4,2 GB de VRAM) ou `large-v3-turbo` (2,4 GB) |
+| `WHISPERX_MODEL` | `large-v3` (4,2 GB de VRAM), `large-v3-turbo` (2,5 GB) ou `medium` (2,6 GB) |
 | `WHISPERX_CACHE_DIR` | cache do Hugging Face. No padrão (`/app/models`) o modelo de ~3 GB fica no volume e não é baixado de novo |
 | `WHISPERX_MODEL_KEEP_ALIVE_SECONDS` | descarrega o modelo da GPU após X segundos ocioso |
 | `HF_TOKEN` | habilita a diarização (falantes `SPEAKER_00`) via pyannote `community-1` |
@@ -262,7 +265,50 @@ Aplicativos de desktop com aceleração (Resolve, Premiere) consomem VRAM fora d
 
 Testado em: AMD Ryzen 5 5700X (8 núcleos/16 threads), 48GB RAM, NVIDIA RTX 5070 Ti 16GB (CUDA), SSD NVMe 200GB+, Debian 13.
 
-Mínimo para rodar a stack: 8 núcleos, 32GB RAM, GPU NVIDIA 8GB+ VRAM, 100GB livres. Com o WhisperX `large-v3` e um modelo de 12B, 16GB de VRAM é o piso real - abaixo disso o chat e a transcrição não coexistem (veja [orçamento de VRAM](#orçamento-de-vram)).
+<a id="perfis-de-hardware"></a>
+
+### Perfis de hardware
+
+Dois templates de `.env`, um por faixa de máquina:
+
+| | Perfil padrão | Perfil pequeno |
+|---|---|---|
+| Template | `.env.example` | `.env.example.small` |
+| GPU | 16 GB de VRAM | 8 GB de VRAM |
+| RAM | 32 GB+ | 16 GB |
+| Modelo de chat | 12B em Q6_K (~9,1 GB) | 8B em Q4_K_M (~4,9 GB) |
+| Contexto do chat | 16384 | 8192 |
+| WhisperX | `large-v3` (~4,2 GB de VRAM) | `medium` (~2,6 GB de VRAM) |
+| Chat e transcrição juntos | cabem (14,7 GB) | não cabem: o chat dorme (`LLAMA_SLEEP_IDLE_SECONDS`) |
+
+Mínimo do perfil padrão: 8 núcleos, 32 GB de RAM, GPU NVIDIA 16 GB, 100 GB livres.
+Mínimo do perfil pequeno: 8 núcleos, 16 GB de RAM, GPU NVIDIA 8 GB, 60 GB livres. Com 16 GB de RAM a máquina precisa ser headless ou ter o desktop fechado: os 8 serviços somam ~5 GB e o SO leva o resto.
+
+### Qual GGUF usar
+
+O GGUF é o que pesa na VRAM. O peso do arquivo é praticamente o que o modelo ocupa na GPU, mais o KV cache e o buffer de computação:
+
+| Modelo | Quantização | Tamanho do GGUF | VRAM com ctx 16384 |
+|---|---|---:|---:|
+| 12B | Q6_K | 9,1 GB | 10,5 GB |
+| 12B | Q5_K_M | 7,6 GB | 9,0 GB |
+| 9B | Q4_K_M | 5,5 GB | 6,9 GB |
+| 8B | Q4_K_M | 4,9 GB | 6,3 GB |
+| 8B | Q3_K_M | 3,9 GB | 5,3 GB |
+| 7B | Q4_K_M | 4,4 GB | 5,8 GB |
+
+Regra prática: **perfil padrão → GGUF de até ~9 GB; perfil pequeno → GGUF de até ~4,5 GB**. Qualquer coisa acima disso não entra na VRAM junto com o WhisperX. Se precisar de mais qualidade, use um modelo maior com quantização mais agressiva (Q3/Q2) ou reduza `LLAMA_CTX_SIZE`.
+
+### Verificar antes de subir
+
+```bash
+python3 scripts/check-hardware.py
+```
+
+O script lê o `.env`, mede a VRAM da GPU e a RAM da máquina, abre o GGUF do `CHAT_MODEL` e diz se o perfil cabe — e o que mexer se não couber. Ele aceita `--vram 8 --ram 16` para simular outra máquina.
+
+> [!TIP]
+> Os números de VRAM do script são estimativas calibradas nas medições do homelab (llama.cpp 0.7, whisperx 0.4.3). Erro de ~5% para o normal.
 
 ---
 
