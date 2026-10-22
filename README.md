@@ -1,6 +1,6 @@
 # Homelab Llama
 
-Versão atual: **1.1.0**
+Versão atual: **1.1.0** (tag [`v1.1.0`](https://github.com/eddiecsilva/homelab-llama/releases/tag/v1.1.0))
 
 > [!WARNING]
 > **Aviso:** este lab foi planejado e testado apenas em ambientes isolados na rede local. Não é indicado para uso em ambientes de produção real.
